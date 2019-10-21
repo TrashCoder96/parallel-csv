@@ -2,149 +2,94 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 func main() {
-	tree := initTree(17, "hello17")
-	for i := 0; i < 100; i++ {
-		tree.insert(100-i, "hello")
+	list := initList(1, "hello")
+	for i := 0; i < 20; i++ {
+		list.waitGroup.Add(1)
+		go list.put()
 	}
-	tree.printTree()
+	list.waitGroup.Wait()
+	list.printAll()
 }
 
-type palmTree struct {
-	Degree         int
-	Root           *node
-	stageWaitGroup sync.WaitGroup
+func (l *LinkedList) put() {
+	for i := 2; i < 10000; i++ {
+		l.insertNode(rand.Intn(3000), "hello")
+	}
+	l.waitGroup.Done()
 }
 
-func initTree(key int, firstElem string) *palmTree {
-	rootNode := node{
-		IsLeafType: true,
-		IsRootType: true,
-		Count:      1,
-	}
-	rootNode.NodeKey = &nodeKey{Key: key, Value: firstElem}
-	tree := &palmTree{Degree: 5, Root: &rootNode}
-	return tree
+//LinkedList type
+type LinkedList struct {
+	waitGroup sync.WaitGroup
+	Root      unsafe.Pointer
 }
 
-func (tree *palmTree) printTree() {
-	var currentNodeKeyPointer = tree.Root.NodeKey
-	for currentNodeKeyPointer != nil {
-		log.Println(currentNodeKeyPointer.Key)
-		currentNodeKeyPointer = currentNodeKeyPointer.NextKey
+func (l *LinkedList) printAll() {
+	var currentPointer = l.Root
+	var previousPointer unsafe.Pointer
+	for currentPointer != nil {
+		node := (*Node)(currentPointer)
+		previousPointer = currentPointer
+		currentPointer = node.Next
+		log.Println(node.Key)
+		if currentPointer != nil && previousPointer != nil && (*Node)(previousPointer).Key > (*Node)(currentPointer).Key {
+			log.Println("ERROR")
+		}
 	}
 }
 
-func (tree *palmTree) palm(goroutineID int, goroutineOperations []Operation, operationsToNodes *sync.Map) {
-	//first stage - search nodes
-	tree.stageWaitGroup.Add(1)
-	goroutineOperationsToNodes := make(map[Operation]*node)
-	for _, op := range goroutineOperations {
-		_, leafNode := tree.search(op.Key)
-		operationsToNodes.Store(op, leafNode)
-		goroutineOperationsToNodes[op] = leafNode
-	}
-	tree.stageWaitGroup.Done()
-	tree.stageWaitGroup.Wait()
-	//second stage - get work for current goroutine
-	tree.stageWaitGroup.Add(1)
-	newGoroutineOperationsToNodes := make(map[Operation]*node)
-	for op, leafNode := range goroutineOperationsToNodes {
-		newGoroutineOperationsToNodes[op] = leafNode
-	}
-	tree.stageWaitGroup.Done()
-	tree.stageWaitGroup.Wait()
-	//end second stage
+func initList(key int, value string) *LinkedList {
+	list := &LinkedList{}
+	list.Root = unsafe.Pointer(&Node{
+		Key:   key,
+		Value: value,
+	})
+	return list
 }
 
-func (tree *palmTree) insert(key int, value string) {
-	_, leafNode := tree.search(key)
-	var currentNodeKeyPointer = leafNode.NodeKey
-	var previousNodeKeyPointer *nodeKey
-	for currentNodeKeyPointer != nil && currentNodeKeyPointer.Key <= key {
-		previousNodeKeyPointer = currentNodeKeyPointer
-		currentNodeKeyPointer = currentNodeKeyPointer.NextKey
+func (l *LinkedList) insertNode(key int, value string) {
+	newNode := Node{
+		Key:   key,
+		Value: value,
 	}
-	newKey := nodeKey{Key: key, Value: value}
-	newKey.NextKey = currentNodeKeyPointer
-	if previousNodeKeyPointer != nil {
-		previousNodeKeyPointer.NextKey = &newKey
+	var currentPointer = (*Node)(l.Root)
+	var previousPointer *Node
+	for currentPointer != nil && currentPointer.Key <= key {
+		previousPointer = currentPointer
+		currentPointer = (*Node)(currentPointer.Next)
+	}
+	l.insertBeetween(previousPointer, &newNode, currentPointer)
+}
+
+func (l *LinkedList) insertBeetween(previuos *Node, new *Node, next *Node) bool {
+	unsafeNew := unsafe.Pointer(new)
+	unsafeNext := unsafe.Pointer(next)
+	a := true
+	if previuos != nil {
+		a = a && atomic.CompareAndSwapPointer(&previuos.Next, unsafeNext, unsafeNew)
 	} else {
-		leafNode.NodeKey = &newKey
+		a = a && atomic.CompareAndSwapPointer(&l.Root, unsafeNext, unsafeNew)
 	}
-	leafNode.Count++
+	a = a && atomic.CompareAndSwapPointer(&new.Next, nil, unsafeNext)
+	return a
 }
 
-func (tree *palmTree) delete(key int) {
-	_, leafNode := tree.search(key)
-	var nodeKeyPointer = leafNode.NodeKey
-	var previousNodeKeyPointer *nodeKey
-	for nodeKeyPointer != nil && nodeKeyPointer.Key != key {
-		previousNodeKeyPointer = nodeKeyPointer
-		nodeKeyPointer = nodeKeyPointer.NextKey
-	}
-	if nodeKeyPointer != nil {
-		previousNodeKeyPointer.NextKey = nodeKeyPointer.NextKey
-	}
-	leafNode.Count--
+//Node type
+type Node struct {
+	Key   int
+	Value string
+	Next  unsafe.Pointer
 }
 
-func (tree *palmTree) search(key int) (string, *node) {
-	return tree.searchRec(key, tree.Root)
+//Row type
+type Row struct {
+	ID    int64
+	Price int
 }
-
-func (tree *palmTree) searchRec(key int, node *node) (string, *node) {
-	if node.IsLeafType {
-		var nodeKey = node.NodeKey
-		for nodeKey != nil && nodeKey.Key != key {
-			nodeKey = nodeKey.NextKey
-		}
-		if nodeKey == nil {
-			return "", node
-		}
-		return nodeKey.Value, node
-	}
-	var nodeLink = node.NodeLink
-	for nodeLink != nil && nodeLink.NextNodeKey != nil && nodeLink.NextNodeKey.Key <= key {
-		nodeLink = nodeLink.NextNodeKey.NextNodeLink
-	}
-	return tree.searchRec(key, nodeLink.LinkValue)
-}
-
-//internal node region
-type node struct {
-	IsLeafType bool
-	IsRootType bool
-	NodeLink   *nodeLink //if internal node
-	NodeKey    *nodeKey  //if leaf node
-	Count      int
-	//
-	appliedOperations []Operation
-}
-
-type nodeLink struct {
-	NextNodeKey *nodeKey
-	LinkValue   *node
-}
-
-type nodeKey struct {
-	Key          int
-	NextNodeLink *nodeLink //if internal node
-	NextKey      *nodeKey  //if leaf key
-	Value        string
-}
-
-//end internal node region
-
-//operations region
-type Operation struct {
-	Type           int
-	Key            int
-	Value          string
-	InfluencedNode *node
-}
-
-//end operation region

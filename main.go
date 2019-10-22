@@ -19,7 +19,7 @@ func main() {
 }
 
 func (l *LinkedList) put() {
-	for i := 2; i < 1000; i++ {
+	for i := 0; i < 1000; i++ {
 		l.insertNode(rand.Intn(30000), "hello")
 	}
 	l.waitGroup.Done()
@@ -36,16 +36,18 @@ type LinkedList struct {
 func (l *LinkedList) printAll() {
 	var currentPointer = l.Root
 	var previousPointer unsafe.Pointer
+	i := 0
 	for currentPointer != nil {
+		i++
 		node := (*Node)(currentPointer)
 		previousPointer = currentPointer
 		currentPointer = node.Next
-		log.Println(node.Key)
 		if currentPointer != nil && previousPointer != nil && (*Node)(previousPointer).Key < (*Node)(currentPointer).Key {
 			log.Println("ERROR")
 		}
 	}
-	log.Println(*l.count)
+	println(*l.count)
+	println(i)
 }
 
 func initList(key int, value string) *LinkedList {
@@ -60,6 +62,7 @@ func (l *LinkedList) insertNode(key int, value string) {
 		Value: value,
 	}
 	for {
+		newNode.Next = nil
 		var currentPointer = (*Node)(l.Root)
 		var previousPointer *Node
 		for currentPointer != nil && currentPointer.Key >= key {
@@ -68,6 +71,10 @@ func (l *LinkedList) insertNode(key int, value string) {
 		}
 		if l.insertBeetween(previousPointer, &newNode, currentPointer) {
 			atomic.AddInt32(l.count, 1)
+			/*if atomic.AddInt32(l.count, 1) > 1000 {
+				l.Root = (*Node)(l.Root).Next
+				atomic.AddInt32(l.count, -1)
+			}*/
 			break
 		}
 	}
@@ -85,9 +92,10 @@ func (l *LinkedList) insertBeetween(previuos *Node, new *Node, next *Node) bool 
 
 //Node type
 type Node struct {
-	Key   int
-	Value string
-	Next  unsafe.Pointer
+	Key           int
+	Value         string
+	Next          unsafe.Pointer
+	MarkAsDeleted bool
 }
 
 //Row type

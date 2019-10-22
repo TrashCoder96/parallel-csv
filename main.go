@@ -19,16 +19,18 @@ func main() {
 }
 
 func (l *LinkedList) put() {
-	for i := 2; i < 10000; i++ {
-		l.insertNode(rand.Intn(3000), "hello")
+	for i := 2; i < 1000; i++ {
+		l.insertNode(rand.Intn(30000), "hello")
 	}
 	l.waitGroup.Done()
 }
 
 //LinkedList type
 type LinkedList struct {
-	waitGroup sync.WaitGroup
-	Root      unsafe.Pointer
+	waitGroup   sync.WaitGroup
+	Root        unsafe.Pointer
+	LastMaxElem unsafe.Pointer
+	count       *int32
 }
 
 func (l *LinkedList) printAll() {
@@ -39,18 +41,16 @@ func (l *LinkedList) printAll() {
 		previousPointer = currentPointer
 		currentPointer = node.Next
 		log.Println(node.Key)
-		if currentPointer != nil && previousPointer != nil && (*Node)(previousPointer).Key > (*Node)(currentPointer).Key {
+		if currentPointer != nil && previousPointer != nil && (*Node)(previousPointer).Key < (*Node)(currentPointer).Key {
 			log.Println("ERROR")
 		}
 	}
+	log.Println(*l.count)
 }
 
 func initList(key int, value string) *LinkedList {
-	list := &LinkedList{}
-	list.Root = unsafe.Pointer(&Node{
-		Key:   key,
-		Value: value,
-	})
+	var c int32
+	list := &LinkedList{count: &c}
 	return list
 }
 
@@ -59,26 +59,28 @@ func (l *LinkedList) insertNode(key int, value string) {
 		Key:   key,
 		Value: value,
 	}
-	var currentPointer = (*Node)(l.Root)
-	var previousPointer *Node
-	for currentPointer != nil && currentPointer.Key <= key {
-		previousPointer = currentPointer
-		currentPointer = (*Node)(currentPointer.Next)
+	for {
+		var currentPointer = (*Node)(l.Root)
+		var previousPointer *Node
+		for currentPointer != nil && currentPointer.Key >= key {
+			previousPointer = currentPointer
+			currentPointer = (*Node)(currentPointer.Next)
+		}
+		if l.insertBeetween(previousPointer, &newNode, currentPointer) {
+			atomic.AddInt32(l.count, 1)
+			break
+		}
 	}
-	l.insertBeetween(previousPointer, &newNode, currentPointer)
 }
 
 func (l *LinkedList) insertBeetween(previuos *Node, new *Node, next *Node) bool {
 	unsafeNew := unsafe.Pointer(new)
 	unsafeNext := unsafe.Pointer(next)
-	a := true
+	atomic.CompareAndSwapPointer(&new.Next, nil, unsafeNext)
 	if previuos != nil {
-		a = a && atomic.CompareAndSwapPointer(&previuos.Next, unsafeNext, unsafeNew)
-	} else {
-		a = a && atomic.CompareAndSwapPointer(&l.Root, unsafeNext, unsafeNew)
+		return atomic.CompareAndSwapPointer(&previuos.Next, unsafeNext, unsafeNew)
 	}
-	a = a && atomic.CompareAndSwapPointer(&new.Next, nil, unsafeNext)
-	return a
+	return atomic.CompareAndSwapPointer(&l.Root, unsafeNext, unsafeNew)
 }
 
 //Node type

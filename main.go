@@ -9,97 +9,152 @@ import (
 )
 
 func main() {
-	list := initList(1, "hello")
-	for i := 0; i < 20; i++ {
+	list := ThreadSafeList{}
+	for i := 0; i < 70; i++ {
 		list.waitGroup.Add(1)
 		go list.put()
 	}
 	list.waitGroup.Wait()
+	go list.delete()
 	list.printAll()
 }
 
-func (l *LinkedList) put() {
-	for i := 0; i < 1000; i++ {
-		l.insertNode(rand.Intn(30000), "hello")
+//ThreadSafeList type
+type ThreadSafeList struct {
+	count     int32
+	head      *listNode
+	waitGroup sync.WaitGroup
+}
+
+func (t *ThreadSafeList) delete() {
+	for i := 0; i < 100; i++ {
+		t.DeleteHead()
 	}
-	l.waitGroup.Done()
 }
 
-//LinkedList type
-type LinkedList struct {
-	waitGroup   sync.WaitGroup
-	Root        unsafe.Pointer
-	LastMaxElem unsafe.Pointer
-	count       *int32
+func (t *ThreadSafeList) put() {
+	for i := 999; i >= 0; i-- {
+		t.InsertNode(rand.Intn(2000), "hello")
+		atomic.AddInt32(&t.count, 1)
+		//t.DeleteHead()
+	}
+	t.waitGroup.Done()
 }
 
-func (l *LinkedList) printAll() {
-	var currentPointer = l.Root
-	var previousPointer unsafe.Pointer
+type listNode struct {
+	markableNext *markablePointer
+	key          int
+	value        string
+}
+
+type markablePointer struct {
+	marked bool
+	next   *listNode
+}
+
+func (t *ThreadSafeList) printAll() {
+	cursor := t.head
 	i := 0
-	for currentPointer != nil {
+	for cursor != nil {
 		i++
-		node := (*Node)(currentPointer)
-		previousPointer = currentPointer
-		currentPointer = node.Next
-		if currentPointer != nil && previousPointer != nil && (*Node)(previousPointer).Key < (*Node)(currentPointer).Key {
-			log.Println("ERROR")
+		log.Println(cursor.key)
+		cursor = cursor.markableNext.next
+	}
+	log.Println(i)
+	log.Println(t.count)
+}
+
+//InsertNode func
+func (t *ThreadSafeList) InsertNode(key int, value string) {
+	defer atomic.AddInt32(&t.count, 1)
+	currentHeadAddress := &t.head
+	currentHead := t.head
+	if currentHead == nil || key < currentHead.key {
+		newNode := listNode{
+			key:   key,
+			value: value,
+			markableNext: &markablePointer{
+				next: currentHead,
+			},
 		}
+		operationSucceeded := atomic.CompareAndSwapPointer(
+			(*unsafe.Pointer)(unsafe.Pointer(currentHeadAddress)),
+			unsafe.Pointer(currentHead),
+			unsafe.Pointer(&newNode),
+		)
+		if !operationSucceeded {
+			t.InsertNode(key, value)
+			return
+		}
+		return
 	}
-	println(*l.count)
-	println(i)
-}
-
-func initList(key int, value string) *LinkedList {
-	var c int32
-	list := &LinkedList{count: &c}
-	return list
-}
-
-func (l *LinkedList) insertNode(key int, value string) {
-	newNode := Node{
-		Key:   key,
-		Value: value,
-	}
+	cursor := t.head
 	for {
-		newNode.Next = nil
-		var currentPointer = (*Node)(l.Root)
-		var previousPointer *Node
-		for currentPointer != nil && currentPointer.Key >= key {
-			previousPointer = currentPointer
-			currentPointer = (*Node)(currentPointer.Next)
-		}
-		if l.insertBeetween(previousPointer, &newNode, currentPointer) {
-			atomic.AddInt32(l.count, 1)
-			/*if atomic.AddInt32(l.count, 1) > 1000 {
-				l.Root = (*Node)(l.Root).Next
-				atomic.AddInt32(l.count, -1)
-			}*/
+		if cursor.markableNext.next == nil || key < cursor.markableNext.next.key {
+			currentNext := cursor.markableNext
+			if currentNext.marked {
+				continue
+			}
+			newNode := listNode{
+				key:   key,
+				value: value,
+				markableNext: &markablePointer{
+					next: currentNext.next,
+				},
+			}
+			newNext := markablePointer{
+				next: &newNode,
+			}
+			operationSucceeded := atomic.CompareAndSwapPointer(
+				(*unsafe.Pointer)(unsafe.Pointer(&(cursor.markableNext))),
+				unsafe.Pointer(currentNext),
+				unsafe.Pointer(&newNext),
+			)
+			if !operationSucceeded {
+				t.InsertNode(key, value)
+				return
+			}
 			break
 		}
+		cursor = cursor.markableNext.next
 	}
 }
 
-func (l *LinkedList) insertBeetween(previuos *Node, new *Node, next *Node) bool {
-	unsafeNew := unsafe.Pointer(new)
-	unsafeNext := unsafe.Pointer(next)
-	atomic.CompareAndSwapPointer(&new.Next, nil, unsafeNext)
-	if previuos != nil {
-		return atomic.CompareAndSwapPointer(&previuos.Next, unsafeNext, unsafeNew)
+//DeleteHead func
+func (t *ThreadSafeList) DeleteHead() {
+	defer atomic.AddInt32(&t.count, -1)
+	currentHeadAddress := &t.head
+	currentHead := t.head
+	cursor := currentHead
+	for {
+		if cursor == nil {
+			break
+		}
+		nextNode := cursor.markableNext.next
+		newNext := markablePointer{
+			marked: true,
+			next:   nextNode,
+		}
+		operationSucceeded := atomic.CompareAndSwapPointer(
+			(*unsafe.Pointer)(unsafe.Pointer(&(cursor.markableNext))),
+			unsafe.Pointer(cursor.markableNext),
+			unsafe.Pointer(&newNext),
+		)
+		if !operationSucceeded {
+			t.DeleteHead()
+			return
+		}
+		newNext = markablePointer{
+			next: nextNode,
+		}
+		operationSucceeded = atomic.CompareAndSwapPointer(
+			(*unsafe.Pointer)(unsafe.Pointer(currentHeadAddress)),
+			unsafe.Pointer(currentHead),
+			unsafe.Pointer(nextNode),
+		)
+		if !operationSucceeded {
+			t.DeleteHead()
+		}
+		break
 	}
-	return atomic.CompareAndSwapPointer(&l.Root, unsafeNext, unsafeNew)
-}
-
-//Node type
-type Node struct {
-	Key           int
-	Value         string
-	Next          unsafe.Pointer
-	MarkAsDeleted bool
-}
-
-//Row type
-type Row struct {
-	ID    int64
-	Price int
 }

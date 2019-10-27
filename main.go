@@ -1,160 +1,162 @@
 package main
 
 import (
-	"log"
+	"math"
 	"math/rand"
 	"sync"
-	"sync/atomic"
-	"unsafe"
 )
 
+var waitGroup sync.WaitGroup
+var waitCreateResultGroup sync.WaitGroup
+var ch = make(chan Row, 1000)
+
 func main() {
-	list := ThreadSafeList{}
-	for i := 0; i < 70; i++ {
-		list.waitGroup.Add(1)
-		go list.put()
+	waitCreateResultGroup.Add(1)
+	go createResultCsv()
+	for i := 0; i < 10; i++ {
+		waitGroup.Add(1)
+		go loadingDataFromCsv()
 	}
-	list.waitGroup.Wait()
-	go list.delete()
-	list.printAll()
+	waitGroup.Wait()
+	close(ch)
+	waitCreateResultGroup.Wait()
 }
 
-//ThreadSafeList type
-type ThreadSafeList struct {
-	count     int32
-	head      *listNode
-	waitGroup sync.WaitGroup
-}
-
-func (t *ThreadSafeList) delete() {
-	for i := 0; i < 100; i++ {
-		t.DeleteHead()
-	}
-}
-
-func (t *ThreadSafeList) put() {
-	for i := 999; i >= 0; i-- {
-		t.InsertNode(rand.Intn(2000), "hello")
-		atomic.AddInt32(&t.count, 1)
-		//t.DeleteHead()
-	}
-	t.waitGroup.Done()
-}
-
-type listNode struct {
-	markableNext *markablePointer
-	key          int
-	value        string
-}
-
-type markablePointer struct {
-	marked bool
-	next   *listNode
-}
-
-func (t *ThreadSafeList) printAll() {
-	cursor := t.head
-	i := 0
-	for cursor != nil {
-		i++
-		log.Println(cursor.key)
-		cursor = cursor.markableNext.next
-	}
-	log.Println(i)
-	log.Println(t.count)
-}
-
-//InsertNode func
-func (t *ThreadSafeList) InsertNode(key int, value string) {
-	defer atomic.AddInt32(&t.count, 1)
-	currentHeadAddress := &t.head
-	currentHead := t.head
-	if currentHead == nil || key < currentHead.key {
-		newNode := listNode{
-			key:   key,
-			value: value,
-			markableNext: &markablePointer{
-				next: currentHead,
-			},
-		}
-		operationSucceeded := atomic.CompareAndSwapPointer(
-			(*unsafe.Pointer)(unsafe.Pointer(currentHeadAddress)),
-			unsafe.Pointer(currentHead),
-			unsafe.Pointer(&newNode),
-		)
-		if !operationSucceeded {
-			t.InsertNode(key, value)
-			return
-		}
-		return
-	}
-	cursor := t.head
-	for {
-		if cursor.markableNext.next == nil || key < cursor.markableNext.next.key {
-			currentNext := cursor.markableNext
-			if currentNext.marked {
-				continue
+func createResultCsv() {
+	count := 0
+	linkedLists := make(map[int64]LinkedList)
+	for r := range ch {
+		if count < 1000 {
+			if list, ok := linkedLists[r.ID]; ok {
+				if list.Count < 20 {
+					list.putNode(r)
+					count++
+				} else {
+					if list.Head.Value.Price > r.Price {
+						list.removeHead()
+						list.putNode(r)
+						count++
+					}
+				}
+			} else {
+				newList := LinkedList{}
+				newList.putNode(r)
+				linkedLists[r.ID] = newList
+				count++
 			}
-			newNode := listNode{
-				key:   key,
-				value: value,
-				markableNext: &markablePointer{
-					next: currentNext.next,
-				},
+		} else {
+			if list, ok := linkedLists[r.ID]; ok {
+				if list.Count < 20 {
+					//find entry with max price, remove this entry and put new entry to map[r.id], if map[r.ID].count < 20
+					maxRow := Row{
+						Price: math.MinInt16,
+					}
+					var maxList *LinkedList
+					for _, llist := range linkedLists {
+						if llist.Head != nil && llist.Head.Value.Price > maxRow.Price {
+							maxRow = llist.Head.Value
+							maxList = &llist
+						}
+					}
+					if maxList != nil && maxList.Head.Value.Price > r.Price {
+						list.putNode(r)
+						maxList.removeHead()
+						if maxList.Count == 0 {
+							delete(linkedLists, maxList.Key)
+						}
+					}
+				} else {
+					if list.Head.Value.Price > r.Price {
+						list.removeHead()
+						list.putNode(r)
+					}
+				}
+			} else {
+				//find entry with max price, remove from this entry node and put new node to map[r.id] entry
+				maxRow := Row{
+					Price: math.MinInt16,
+				}
+				var maxList *LinkedList
+				for _, llist := range linkedLists {
+					if llist.Head != nil && llist.Head.Value.Price > maxRow.Price {
+						maxRow = llist.Head.Value
+						maxList = &llist
+					}
+				}
+				if maxList != nil && maxList.Head.Value.Price > r.Price {
+					newList := LinkedList{}
+					newList.putNode(r)
+					linkedLists[r.ID] = newList
+					maxList.removeHead()
+					if maxList.Count == 0 {
+						delete(linkedLists, maxList.Key)
+					}
+				}
 			}
-			newNext := markablePointer{
-				next: &newNode,
-			}
-			operationSucceeded := atomic.CompareAndSwapPointer(
-				(*unsafe.Pointer)(unsafe.Pointer(&(cursor.markableNext))),
-				unsafe.Pointer(currentNext),
-				unsafe.Pointer(&newNext),
-			)
-			if !operationSucceeded {
-				t.InsertNode(key, value)
-				return
-			}
-			break
 		}
-		cursor = cursor.markableNext.next
 	}
+	waitCreateResultGroup.Done()
 }
 
-//DeleteHead func
-func (t *ThreadSafeList) DeleteHead() {
-	defer atomic.AddInt32(&t.count, -1)
-	currentHeadAddress := &t.head
-	currentHead := t.head
-	cursor := currentHead
-	for {
-		if cursor == nil {
-			break
+func loadingDataFromCsv() {
+	for i := 0; i < 10; i++ {
+		row := Row{
+			ID:    int64(i),
+			Price: rand.Int63n(1000),
+			Name:  "hello",
 		}
-		nextNode := cursor.markableNext.next
-		newNext := markablePointer{
-			marked: true,
-			next:   nextNode,
-		}
-		operationSucceeded := atomic.CompareAndSwapPointer(
-			(*unsafe.Pointer)(unsafe.Pointer(&(cursor.markableNext))),
-			unsafe.Pointer(cursor.markableNext),
-			unsafe.Pointer(&newNext),
-		)
-		if !operationSucceeded {
-			t.DeleteHead()
-			return
-		}
-		newNext = markablePointer{
-			next: nextNode,
-		}
-		operationSucceeded = atomic.CompareAndSwapPointer(
-			(*unsafe.Pointer)(unsafe.Pointer(currentHeadAddress)),
-			unsafe.Pointer(currentHead),
-			unsafe.Pointer(nextNode),
-		)
-		if !operationSucceeded {
-			t.DeleteHead()
-		}
-		break
+		ch <- row
 	}
+	waitGroup.Done()
+}
+
+//Row struct
+type Row struct {
+	ID    int64
+	Price int64
+	Name  string
+}
+
+//LinkedList struct
+type LinkedList struct {
+	Key   int64
+	Count int
+	Head  *Node
+}
+
+func (ll *LinkedList) putNode(row Row) {
+	newNode := Node{
+		Value:    row,
+		Next:     nil,
+		Previous: nil,
+	}
+	cursor := ll.Head
+	for cursor != nil && cursor.Value.Price >= newNode.Value.Price {
+		cursor = cursor.Next
+	}
+	if cursor != nil {
+		newNode.Next = cursor
+		newNode.Previous = cursor.Previous
+		if cursor.Previous != nil {
+			cursor.Previous.Next = &newNode
+			cursor.Previous = &newNode
+		}
+	} else {
+		ll.Head = &newNode
+	}
+	ll.Count++
+}
+
+func (ll LinkedList) removeHead() {
+	if ll.Head != nil {
+		ll.Head = ll.Head.Next
+	}
+	ll.Count--
+}
+
+//Node struct
+type Node struct {
+	Value    Row
+	Next     *Node
+	Previous *Node
 }

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"math/rand"
+	"sort"
 	"sync"
 )
 
@@ -95,19 +95,43 @@ func createResultCsv() {
 			}
 		}
 	}
-	for key, list := range linkedLists {
-		log.Println(key)
-		list.PrintAll()
+	result := make([]Row, 0, 1000)
+	for _, list := range linkedLists {
+		cursor := list.Head
+		for cursor != nil {
+			result = append(result, cursor.Value)
+			cursor = cursor.Next
+		}
 	}
+	sort.Sort(RowSlice(result))
+	log.Println(result)
+	log.Println(len(result))
 	waitCreateResultGroup.Done()
+}
+
+//RowSlice type
+type RowSlice []Row
+
+func (rs RowSlice) Len() int {
+	return len(rs)
+}
+
+func (rs RowSlice) Less(i, j int) bool {
+	return rs[i].Price < rs[j].Price
+}
+
+func (rs RowSlice) Swap(i, j int) {
+	rs[i], rs[j] = rs[j], rs[i]
 }
 
 func loadingDataFromCsv() {
 	for i := 0; i < 1000; i++ {
 		row := Row{
-			ID:    rand.Int63n(10),
-			Price: rand.Int63n(1000),
-			Name:  "hello",
+			ID:        rand.Int63n(1000),
+			Condition: "con1",
+			Price:     rand.Int63n(1000) + 2,
+			Name:      "hello",
+			State:     "st1",
 		}
 		ch <- row
 	}
@@ -116,9 +140,11 @@ func loadingDataFromCsv() {
 
 //Row struct
 type Row struct {
-	ID    int64
-	Price int64
-	Name  string
+	ID        int64
+	Name      string
+	Condition string
+	Price     int64
+	State     string
 }
 
 //LinkedList struct
@@ -126,18 +152,6 @@ type LinkedList struct {
 	Key   int64
 	Count int
 	Head  *Node
-}
-
-//PrintAll func
-func (ll *LinkedList) PrintAll() {
-	output := ""
-	cursor := ll.Head
-	for cursor != nil {
-		output += fmt.Sprintf("%#v", cursor.Value)
-		output += "\n"
-		cursor = cursor.Next
-	}
-	log.Println(output)
 }
 
 func (ll *LinkedList) putNode(row Row) {

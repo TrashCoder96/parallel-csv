@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/csv"
 	"io"
-	"log"
 	"math"
 	"os"
 	"sort"
@@ -108,9 +107,21 @@ func createResultCsv() {
 		}
 	}
 	sort.Sort(RowSlice(result))
-	log.Println(result)
-	log.Println(len(result))
+	createCsv(result)
 	waitCreateResultGroup.Done()
+}
+
+func createCsv(rows []Row) {
+	file, _ := os.Create("result.csv")
+	defer file.Close()
+	writer := csv.NewWriter(file)
+	writer.Comma = ';'
+	defer writer.Flush()
+	for _, row := range rows {
+		strconv.FormatInt(row.ID, 10)
+		record := []string{strconv.FormatInt(row.ID, 10), row.Name, row.Condition, row.State, strconv.FormatInt(row.Price, 10)}
+		writer.Write(record)
+	}
 }
 
 //RowSlice type

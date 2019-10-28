@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"sync"
@@ -24,30 +26,29 @@ func main() {
 
 func createResultCsv() {
 	count := 0
-	linkedLists := make(map[int64]LinkedList)
+	linkedLists := make(map[int64]*LinkedList)
 	for r := range ch {
 		if count < 1000 {
 			if list, ok := linkedLists[r.ID]; ok {
 				if list.Count < 20 {
 					list.putNode(r)
-					count++
+					count = count + 1
 				} else {
 					if list.Head.Value.Price > r.Price {
 						list.removeHead()
 						list.putNode(r)
-						count++
+						count = count + 1
 					}
 				}
 			} else {
-				newList := LinkedList{}
+				newList := LinkedList{Key: r.ID, Count: 0}
 				newList.putNode(r)
-				linkedLists[r.ID] = newList
-				count++
+				linkedLists[r.ID] = &newList
+				count = count + 1
 			}
 		} else {
 			if list, ok := linkedLists[r.ID]; ok {
 				if list.Count < 20 {
-					//find entry with max price, remove this entry and put new entry to map[r.id], if map[r.ID].count < 20
 					maxRow := Row{
 						Price: math.MinInt16,
 					}
@@ -55,7 +56,7 @@ func createResultCsv() {
 					for _, llist := range linkedLists {
 						if llist.Head != nil && llist.Head.Value.Price > maxRow.Price {
 							maxRow = llist.Head.Value
-							maxList = &llist
+							maxList = llist
 						}
 					}
 					if maxList != nil && maxList.Head.Value.Price > r.Price {
@@ -72,7 +73,6 @@ func createResultCsv() {
 					}
 				}
 			} else {
-				//find entry with max price, remove from this entry node and put new node to map[r.id] entry
 				maxRow := Row{
 					Price: math.MinInt16,
 				}
@@ -80,13 +80,13 @@ func createResultCsv() {
 				for _, llist := range linkedLists {
 					if llist.Head != nil && llist.Head.Value.Price > maxRow.Price {
 						maxRow = llist.Head.Value
-						maxList = &llist
+						maxList = llist
 					}
 				}
 				if maxList != nil && maxList.Head.Value.Price > r.Price {
-					newList := LinkedList{}
+					newList := LinkedList{Key: r.ID, Count: 0}
 					newList.putNode(r)
-					linkedLists[r.ID] = newList
+					linkedLists[r.ID] = &newList
 					maxList.removeHead()
 					if maxList.Count == 0 {
 						delete(linkedLists, maxList.Key)
@@ -95,13 +95,17 @@ func createResultCsv() {
 			}
 		}
 	}
+	for key, list := range linkedLists {
+		log.Println(key)
+		list.PrintAll()
+	}
 	waitCreateResultGroup.Done()
 }
 
 func loadingDataFromCsv() {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1000; i++ {
 		row := Row{
-			ID:    int64(i),
+			ID:    rand.Int63n(10),
 			Price: rand.Int63n(1000),
 			Name:  "hello",
 		}
@@ -124,39 +128,47 @@ type LinkedList struct {
 	Head  *Node
 }
 
-func (ll *LinkedList) putNode(row Row) {
-	newNode := Node{
-		Value:    row,
-		Next:     nil,
-		Previous: nil,
-	}
+//PrintAll func
+func (ll *LinkedList) PrintAll() {
+	output := ""
 	cursor := ll.Head
-	for cursor != nil && cursor.Value.Price >= newNode.Value.Price {
+	for cursor != nil {
+		output += fmt.Sprintf("%#v", cursor.Value)
+		output += "\n"
 		cursor = cursor.Next
 	}
-	if cursor != nil {
-		newNode.Next = cursor
-		newNode.Previous = cursor.Previous
-		if cursor.Previous != nil {
-			cursor.Previous.Next = &newNode
-			cursor.Previous = &newNode
-		}
+	log.Println(output)
+}
+
+func (ll *LinkedList) putNode(row Row) {
+	newNode := Node{
+		Value: row,
+		Next:  nil,
+	}
+	cursor := ll.Head
+	var previous *Node
+	for cursor != nil && cursor.Value.Price >= newNode.Value.Price {
+		previous = cursor
+		cursor = cursor.Next
+	}
+	newNode.Next = cursor
+	if previous != nil {
+		previous.Next = &newNode
 	} else {
 		ll.Head = &newNode
 	}
-	ll.Count++
+	ll.Count = ll.Count + 1
 }
 
-func (ll LinkedList) removeHead() {
+func (ll *LinkedList) removeHead() {
 	if ll.Head != nil {
 		ll.Head = ll.Head.Next
 	}
-	ll.Count--
+	ll.Count = ll.Count - 1
 }
 
 //Node struct
 type Node struct {
-	Value    Row
-	Next     *Node
-	Previous *Node
+	Value Row
+	Next  *Node
 }

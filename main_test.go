@@ -23,7 +23,7 @@ func Test_OneFileWith25Tuples_success(t *testing.T) {
 		rows = append(rows, row)
 	}
 	createInputFile("file.csv", rows)
-	process([]string{"main.exe", "1000", "20", "result.csv"})
+	process([]string{"main.exe", "1000", "20", "file.csv"})
 	checkFile("result.csv", t)
 }
 

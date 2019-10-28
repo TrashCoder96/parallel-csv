@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"encoding/csv"
+	"io"
 	"log"
 	"math"
-	"math/rand"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -15,9 +19,9 @@ var ch = make(chan Row, 1000)
 func main() {
 	waitCreateResultGroup.Add(1)
 	go createResultCsv()
-	for i := 0; i < 10; i++ {
+	for i := 1; i < len(os.Args); i++ {
 		waitGroup.Add(1)
-		go loadingDataFromCsv()
+		go loadingDataFromCsv(os.Args[i])
 	}
 	waitGroup.Wait()
 	close(ch)
@@ -124,16 +128,27 @@ func (rs RowSlice) Swap(i, j int) {
 	rs[i], rs[j] = rs[j], rs[i]
 }
 
-func loadingDataFromCsv() {
-	for i := 0; i < 1000; i++ {
+func loadingDataFromCsv(path string) {
+	file, _ := os.Open(path)
+	defer file.Close()
+	reader := csv.NewReader(bufio.NewReader(file))
+	reader.Comma = ';'
+	line, err := reader.Read()
+	for err != io.EOF {
+		ID, _ := strconv.ParseInt(line[0], 10, 64)
+		Name := line[1]
+		Condition := line[2]
+		State := line[3]
+		Price, _ := strconv.ParseInt(line[4], 10, 64)
 		row := Row{
-			ID:        rand.Int63n(1000),
-			Condition: "con1",
-			Price:     rand.Int63n(1000) + 2,
-			Name:      "hello",
-			State:     "st1",
+			ID:        ID,
+			Name:      Name,
+			Condition: Condition,
+			State:     State,
+			Price:     Price,
 		}
 		ch <- row
+		line, err = reader.Read()
 	}
 	waitGroup.Done()
 }

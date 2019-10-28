@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/csv"
 	"io"
+	"log"
 	"math"
 	"os"
 	"sort"
@@ -16,9 +17,21 @@ var waitCreateResultGroup sync.WaitGroup
 var ch = make(chan Row, 1000)
 
 func main() {
+	process(os.Args)
+}
+
+func process(params []string) {
+	limit, limitErr := strconv.ParseInt(params[1], 10, 64)
+	if limitErr != nil {
+		log.Panicln("Invalid limit param")
+	}
+	IDlimit, IDLimitErr := strconv.ParseInt(params[2], 10, 64)
+	if IDLimitErr != nil {
+		log.Panicln("Invalid IDlimit param")
+	}
 	waitCreateResultGroup.Add(1)
-	go createResultCsv()
-	for i := 1; i < len(os.Args); i++ {
+	go createResultCsv(limit, IDlimit)
+	for i := 3; i < len(params); i++ {
 		waitGroup.Add(1)
 		go loadingDataFromCsv(os.Args[i])
 	}
@@ -27,13 +40,13 @@ func main() {
 	waitCreateResultGroup.Wait()
 }
 
-func createResultCsv() {
-	count := 0
+func createResultCsv(limit, IDLimit int64) {
+	var count int64
 	linkedLists := make(map[int64]*LinkedList)
 	for r := range ch {
-		if count < 1000 {
+		if count < limit {
 			if list, ok := linkedLists[r.ID]; ok {
-				if list.Count < 20 {
+				if list.Count < IDLimit {
 					list.putNode(r)
 					count = count + 1
 				} else {
@@ -51,7 +64,7 @@ func createResultCsv() {
 			}
 		} else {
 			if list, ok := linkedLists[r.ID]; ok {
-				if list.Count < 20 {
+				if list.Count < IDLimit {
 					maxRow := Row{
 						Price: math.MinInt16,
 					}
@@ -118,7 +131,6 @@ func createCsv(rows []Row) {
 	writer.Comma = ';'
 	defer writer.Flush()
 	for _, row := range rows {
-		strconv.FormatInt(row.ID, 10)
 		record := []string{strconv.FormatInt(row.ID, 10), row.Name, row.Condition, row.State, strconv.FormatInt(row.Price, 10)}
 		writer.Write(record)
 	}
@@ -176,7 +188,7 @@ type Row struct {
 //LinkedList struct
 type LinkedList struct {
 	Key   int64
-	Count int
+	Count int64
 	Head  *Node
 }
 

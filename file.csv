@@ -1,3 +1,25 @@
-1100002;Hotel 1;Standart Room+10 nights+AI;quote;10000
-1110032;Hotel 2;Standart Room+7 nights+BB;quote;120000
-1110032;Hotel 2;King Room+7 nights+BB;request;150000
+20;Hotel;cond1;state;0
+20;Hotel;cond1;state;100
+20;Hotel;cond1;state;200
+20;Hotel;cond1;state;300
+20;Hotel;cond1;state;400
+20;Hotel;cond1;state;500
+20;Hotel;cond1;state;600
+20;Hotel;cond1;state;700
+20;Hotel;cond1;state;800
+20;Hotel;cond1;state;900
+20;Hotel;cond1;state;1000
+20;Hotel;cond1;state;1100
+20;Hotel;cond1;state;1200
+20;Hotel;cond1;state;1300
+20;Hotel;cond1;state;1400
+20;Hotel;cond1;state;1500
+20;Hotel;cond1;state;1600
+20;Hotel;cond1;state;1700
+20;Hotel;cond1;state;1800
+20;Hotel;cond1;state;1900
+20;Hotel;cond1;state;2000
+20;Hotel;cond1;state;2100
+20;Hotel;cond1;state;2200
+20;Hotel;cond1;state;2300
+20;Hotel;cond1;state;2400

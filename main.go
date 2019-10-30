@@ -29,11 +29,19 @@ func process(params []string) {
 	if IDLimitErr != nil {
 		log.Panicln("Invalid IDlimit param")
 	}
+	parallely, parallelyErr := strconv.ParseBool(params[3])
+	if parallelyErr != nil {
+		log.Panicln("Invalid parallely param")
+	}
 	waitCreateResultGroup.Add(1)
 	go createResultCsv(limit, IDlimit)
-	for i := 3; i < len(params); i++ {
+	for i := 4; i < len(params); i++ {
 		waitGroup.Add(1)
-		go loadingDataFromCsv(os.Args[i])
+		if parallely {
+			go loadingDataFromCsv(params[i])
+		} else {
+			loadingDataFromCsv(params[i])
+		}
 	}
 	waitGroup.Wait()
 	close(ch)

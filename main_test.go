@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"io"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"testing"
@@ -12,18 +13,18 @@ import (
 
 func Test_OneFileWith25Tuples_success(t *testing.T) {
 	rows := make([]Row, 0, 25)
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 10000; i++ {
 		row := Row{
-			ID:        20,
+			ID:        rand.Int63n(110) + 1,
 			Name:      "Hotel",
 			Condition: "cond1",
-			Price:     int64(i * 100),
+			Price:     int64(rand.Int63n(5000)) + 5000,
 			State:     "state",
 		}
 		rows = append(rows, row)
 	}
 	createInputFile("file.csv", rows)
-	process([]string{"main.exe", "1000", "20", "file.csv"})
+	process([]string{"main.exe", "1000", "20", "false", "file.csv"})
 	checkFile("result.csv", t)
 }
 
@@ -50,8 +51,19 @@ func checkFile(name string, t *testing.T) {
 		rows = append(rows, row)
 		line, err = reader.Read()
 	}
+	counters := make(map[int64]int64)
 	for i := 0; i < len(rows)-1; i++ {
-		if rows[i].Price >= rows[i+1].Price {
+		if value, ok := counters[rows[i].ID]; ok {
+			if value+1 > 20 {
+				t.Error()
+				t.FailNow()
+			}
+			counters[rows[i].ID] = value + 1
+		} else {
+			counters[rows[i].ID] = 1
+		}
+		if rows[i].Price > rows[i+1].Price {
+			t.Error()
 			t.FailNow()
 		}
 	}

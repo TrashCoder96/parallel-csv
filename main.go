@@ -12,15 +12,14 @@ import (
 	"sync"
 )
 
-var ch = make(chan Row, 1000)
-var waitGroup sync.WaitGroup
-var waitCreateResultGroup sync.WaitGroup
-
 func main() {
 	process(os.Args)
 }
 
 func process(params []string) {
+	ch := make(chan Row, 1000)
+	var waitGroup sync.WaitGroup
+	var waitCreateResultGroup sync.WaitGroup
 	limit, limitErr := strconv.ParseInt(params[1], 10, 64)
 	if limitErr != nil {
 		log.Panicln("Invalid limit param")
@@ -34,13 +33,13 @@ func process(params []string) {
 		log.Panicln("Invalid parallelly param")
 	}
 	waitCreateResultGroup.Add(1)
-	go createResultCsv(limit, IDlimit)
+	go createResultCsv(limit, IDlimit, &waitCreateResultGroup, ch)
 	waitGroup.Add(len(params) - 4)
 	for i := 4; i < len(params); i++ {
 		if parallelly {
-			go loadingDataFromCsv(params[i])
+			go loadingDataFromCsv(params[i], &waitGroup, ch)
 		} else {
-			loadingDataFromCsv(params[i])
+			loadingDataFromCsv(params[i], &waitGroup, ch)
 		}
 	}
 	waitGroup.Wait()
@@ -48,7 +47,7 @@ func process(params []string) {
 	waitCreateResultGroup.Wait()
 }
 
-func createResultCsv(limit, IDLimit int64) {
+func createResultCsv(limit, IDLimit int64, waitCreateResultGroup *sync.WaitGroup, ch chan Row) {
 	defer waitCreateResultGroup.Done()
 	var count int64
 	linkedLists := make(map[int64]*LinkedList)
@@ -159,7 +158,7 @@ func (rs RowSlice) Swap(i, j int) {
 	rs[i], rs[j] = rs[j], rs[i]
 }
 
-func loadingDataFromCsv(path string) {
+func loadingDataFromCsv(path string, waitGroup *sync.WaitGroup, ch chan<- Row) {
 	file, _ := os.Open(path)
 	defer func(f *os.File) {
 		f.Close()

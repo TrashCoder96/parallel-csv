@@ -29,7 +29,7 @@ func Test_OneFileWith25Tuples_success(t *testing.T) {
 	checkFile("result.csv", t)
 }
 
-func Benchmark_10Files(b *testing.B) {
+func Benchmark_10FilesParallelly(b *testing.B) {
 	params := []string{"main.exe", "1000", "20", "true"}
 	names := make([]string, 0, 10)
 	for i := 0; i < 10; i++ {
@@ -49,7 +49,34 @@ func Benchmark_10Files(b *testing.B) {
 		createInputFile(name, rows)
 	}
 	params = append(params, names...)
-	process(params)
+	for j := 0; j < b.N; j++ {
+		process(params)
+	}
+}
+
+func Benchmark_10FilesСonsequentially(b *testing.B) {
+	params := []string{"main.exe", "1000", "20", "false"}
+	names := make([]string, 0, 10)
+	for i := 0; i < 10; i++ {
+		rows := make([]Row, 0, 10000)
+		for i := 0; i < 10000; i++ {
+			row := Row{
+				ID:        rand.Int63n(110) + 1,
+				Name:      "Hotel",
+				Condition: "cond1",
+				Price:     int64(rand.Int63n(5000)) + 5000,
+				State:     "state",
+			}
+			rows = append(rows, row)
+		}
+		name := fmt.Sprintf("file%d.csv", i)
+		names = append(names, name)
+		createInputFile(name, rows)
+	}
+	params = append(params, names...)
+	for j := 0; j < b.N; j++ {
+		process(params)
+	}
 }
 
 func checkFile(name string, t *testing.T) {
